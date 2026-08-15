@@ -1,5 +1,5 @@
+use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -7,8 +7,10 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use fuo::prelude::{Attachment, Comment, FuoClient, Thread};
 
+mod session;
+
 #[derive(Parser)]
-#[command(version, about = "FuOverflow scraper")]
+#[command(name = "openfpt", version, about = "FuOverflow scraper")]
 struct Args {
     #[command(subcommand)]
     command: Command,
@@ -53,12 +55,6 @@ enum Command {
 
 const RESET: &str = "\x1b[0m";
 
-fn session_path() -> Result<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
-    Ok(dir.join("session.txt"))
-}
-
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         let home = std::env::var("USERPROFILE")
@@ -74,28 +70,6 @@ fn expand_tilde(path: &str) -> PathBuf {
 fn is_forbidden(err: &anyhow::Error) -> bool {
     err.downcast_ref::<fuo::prelude::Error>()
         .is_some_and(|e| matches!(e, fuo::prelude::Error::Network(n) if n.status().map(|s| s.as_u16()) == Some(403)))
-}
-
-fn save_session(client: &FuoClient) -> Result<()> {
-    std::fs::write(session_path()?, client.session_cookies())?;
-    Ok(())
-}
-
-fn load_session() -> Result<Option<String>> {
-    let path = session_path()?;
-    if path.exists() {
-        Ok(Some(std::fs::read_to_string(path)?))
-    } else {
-        Ok(None)
-    }
-}
-
-fn prompt(text: &str) -> Result<String> {
-    print!("{text}");
-    std::io::stdout().flush()?;
-    let mut line = String::new();
-    std::io::stdin().read_line(&mut line)?;
-    Ok(line.trim().to_owned())
 }
 
 fn short_prefix(prefix: &str) -> &str {
@@ -284,21 +258,37 @@ fn escape_toml(s: &str) -> String {
     out
 }
 
-fn write_manifest_toml(title: &str, id: u32, attachments: &[Attachment]) -> String {
+fn write_manifest_toml(
+    title: &str,
+    id: u32,
+    attachments: &[Attachment],
+    file_names: &[PathBuf],
+) -> String {
     let mut out = String::new();
     writeln!(out, "title = \"{}\"", escape_toml(title)).unwrap();
     writeln!(out, "thread_id = {id}").unwrap();
+    let mut used_keys = HashSet::new();
 
-    for attachment in attachments {
+    for (attachment, file) in attachments.iter().zip(file_names) {
         let stem = attachment
             .name
             .rsplit_once('.')
             .map_or(attachment.name.as_str(), |(stem, _)| stem);
-        let key = toml_key(stem, attachment.id);
+        let mut key = toml_key(stem, attachment.id);
+        if !used_keys.insert(key.clone()) {
+            key = format!("{key}_{}", attachment.id);
+        }
 
         writeln!(out).unwrap();
         writeln!(out, "[{key}]").unwrap();
         writeln!(out, "name = \"{}\"", escape_toml(&attachment.name)).unwrap();
+        let file_name = file
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(attachment.name.as_str());
+        if file_name != attachment.name.as_str() {
+            writeln!(out, "file = \"{}\"", escape_toml(file_name)).unwrap();
+        }
         writeln!(out, "attachment_id = {}", attachment.id).unwrap();
         if let Some(size) = &attachment.size {
             writeln!(out, "size = \"{}\"", escape_toml(size)).unwrap();
@@ -315,6 +305,8 @@ fn write_comments_toml(title: &str, id: u32, items: &[(&Attachment, Vec<Comment>
     writeln!(out, "title = \"{}\"", escape_toml(title)).unwrap();
     writeln!(out, "thread_id = {id}").unwrap();
 
+    let mut used_keys = HashSet::new();
+
     for (attachment, comments) in items {
         if comments.is_empty() {
             continue;
@@ -323,7 +315,10 @@ fn write_comments_toml(title: &str, id: u32, items: &[(&Attachment, Vec<Comment>
             .name
             .rsplit_once('.')
             .map_or(attachment.name.as_str(), |(stem, _)| stem);
-        let key = toml_key(stem, attachment.id);
+        let mut key = toml_key(stem, attachment.id);
+        if !used_keys.insert(key.clone()) {
+            key = format!("{key}_{}", attachment.id);
+        }
 
         writeln!(out).unwrap();
         writeln!(out, "[{key}]").unwrap();
@@ -354,11 +349,18 @@ async fn install_thread(
     }
     std::fs::create_dir_all(&thread_dir)?;
 
+    let mut used = HashSet::new();
+    let file_names: Vec<PathBuf> = page
+        .attachments
+        .iter()
+        .map(|attachment| unique_dest(&thread_dir, &attachment.name, &mut used))
+        .collect();
+
     let mut items: Vec<(&Attachment, Vec<Comment>)> = Vec::new();
     let mut commented = 0;
     let mut existing = 0;
 
-    for attachment in &page.attachments {
+    for (i, attachment) in page.attachments.iter().enumerate() {
         let comments = if with_comments {
             client.attachment_comments(attachment).await.map_or_else(
                 |_| Vec::new(),
@@ -374,12 +376,19 @@ async fn install_thread(
         };
         items.push((attachment, comments));
 
-        let dest = thread_dir.join(&attachment.name);
-        if file_present(&dest, attachment.size.as_deref()) {
+        let dest = &file_names[i];
+        if dest.file_name().and_then(|f| f.to_str()) != Some(attachment.name.as_str()) {
+            println!(
+                "  duplicate name \"{}\" -> {}",
+                attachment.name,
+                dest.file_name().unwrap().to_string_lossy()
+            );
+        }
+        if file_present(dest, attachment.size.as_deref()) {
             existing += 1;
             continue;
         }
-        match client.download_attachment_to(attachment, &dest).await {
+        match client.download_attachment_to(attachment, dest).await {
             Ok(_) => {}
             Err(err) => println!("  skipped {} ({err})", attachment.name),
         }
@@ -396,10 +405,109 @@ async fn install_thread(
     }
     std::fs::write(
         thread_dir.join("manifest.toml"),
-        write_manifest_toml(&page.title, id, &page.attachments),
+        write_manifest_toml(&page.title, id, &page.attachments, &file_names),
     )?;
 
     Ok(Some((page.attachments.len(), existing, commented)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attach(id: u32, name: &str) -> Attachment {
+        Attachment {
+            id,
+            name: name.to_owned(),
+            url: String::new(),
+            size: None,
+            views: None,
+            media_id: None,
+            media_slug: None,
+        }
+    }
+
+    fn name(dir: &Path, used: &mut HashSet<String>, original: &str) -> String {
+        unique_dest(dir, original, used)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap()
+            .to_owned()
+    }
+
+    #[test]
+    fn unique_dest_numbers_duplicates() {
+        let dir = Path::new(".");
+        let mut used = HashSet::new();
+        assert_eq!(name(dir, &mut used, "thisimage.png"), "thisimage.png");
+        assert_eq!(name(dir, &mut used, "thisimage.png"), "thisimage (1).png");
+        assert_eq!(name(dir, &mut used, "thisimage.png"), "thisimage (2).png");
+    }
+
+    #[test]
+    fn unique_dest_treats_case_variants_as_duplicates() {
+        let dir = Path::new(".");
+        let mut used = HashSet::new();
+        assert_eq!(name(dir, &mut used, "IMG.png"), "IMG.png");
+        assert_eq!(name(dir, &mut used, "img.png"), "img (1).png");
+    }
+
+    #[test]
+    fn unique_dest_keeps_distinct_names_alone() {
+        let dir = Path::new(".");
+        let mut used = HashSet::new();
+        assert_eq!(name(dir, &mut used, "a.png"), "a.png");
+        assert_eq!(name(dir, &mut used, "b.png"), "b.png");
+    }
+
+    #[test]
+    fn unique_dest_handles_extensionless_names() {
+        let dir = Path::new(".");
+        let mut used = HashSet::new();
+        assert_eq!(name(dir, &mut used, "readme"), "readme");
+        assert_eq!(name(dir, &mut used, "readme"), "readme (1)");
+    }
+
+    #[test]
+    fn manifest_dedupes_duplicate_names() {
+        let attachments = vec![attach(1, "thisimage.png"), attach(2, "thisimage.png")];
+        let file_names = vec![
+            PathBuf::from("thisimage.png"),
+            PathBuf::from("thisimage (1).png"),
+        ];
+        let toml = write_manifest_toml("test thread", 7, &attachments, &file_names);
+
+        assert!(toml.contains("[thisimage]"));
+        assert!(toml.contains("[thisimage_2]"));
+        assert!(toml.contains("file = \"thisimage (1).png\""));
+    }
+
+    #[test]
+    fn manifest_omits_file_field_when_name_is_unique() {
+        let attachments = vec![attach(1, "a.png")];
+        let file_names = vec![PathBuf::from("a.png")];
+        let toml = write_manifest_toml("test thread", 7, &attachments, &file_names);
+
+        assert!(toml.contains("[a]"));
+        assert!(!toml.contains("file ="));
+    }
+
+    #[test]
+    fn comments_toml_dedupes_duplicate_names() {
+        let comment = || Comment {
+            author: "author".to_owned(),
+            body: "body".to_owned(),
+            date: "date".to_owned(),
+            vote: None,
+        };
+        let first = attach(1, "thisimage.png");
+        let second = attach(2, "thisimage.png");
+        let items = vec![(&first, vec![comment()]), (&second, vec![comment()])];
+        let toml = write_comments_toml("test thread", 7, &items);
+
+        assert!(toml.contains("[thisimage]"));
+        assert!(toml.contains("[thisimage_2]"));
+    }
 }
 
 fn file_present(path: &Path, size: Option<&str>) -> bool {
@@ -408,6 +516,29 @@ fn file_present(path: &Path, size: Option<&str>) -> bool {
     };
     size.and_then(parse_size_bytes)
         .is_none_or(|listed| meta.len() >= listed * 9 / 10)
+}
+
+/// Pick a path for an attachment that never collides with another attachment
+/// in the same listing: the first `thisimage.png` keeps its name, the next one
+/// becomes `thisimage (1).png`, then `thisimage (2).png`, ...
+///
+/// Keys are lowercased so case-only variants (`IMG.png` vs `img.png`) are also
+/// treated as duplicates, matching case-insensitive filesystems.
+fn unique_dest(dir: &Path, name: &str, used: &mut HashSet<String>) -> PathBuf {
+    if used.insert(name.to_lowercase()) {
+        return dir.join(name);
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) => (stem, format!(".{ext}")),
+        None => (name, String::new()),
+    };
+    for n in 1.. {
+        let candidate = format!("{stem} ({n}){ext}");
+        if used.insert(candidate.to_lowercase()) {
+            return dir.join(candidate);
+        }
+    }
+    unreachable!()
 }
 
 fn parse_size_bytes(size: &str) -> Option<u64> {
@@ -425,35 +556,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Command::Login { login, password } => {
-            let login = match login {
-                Some(login) => login,
-                None => prompt("Login: ")?,
-            };
-            let password = match password {
-                Some(password) => password,
-                None => rpassword::prompt_password("Password: ")?,
-            };
-
-            let mut client = FuoClient::builder()
-                .timeout(Duration::from_secs(30))
-                .build()?;
-            match client.login(&login, &password, true).await {
-                Ok(()) => {
-                    save_session(&client)?;
-                    println!("Authenticated: {}", client.is_logged_in());
-                }
-                Err(fuo::prelude::Error::AccountBanned) => {
-                    println!(
-                        "Account is locked: the site detected abnormal access (truy cập quá nhanh / tải nhiều ảnh)."
-                    );
-                    println!(
-                        "Send an appeal if this is a mistake: https://fuoverflow.com/anti-crawl-appeal/"
-                    );
-                }
-                Err(err) => return Err(err.into()),
-            }
-        }
+        Command::Login { login, password } => session::login(login, password).await?,
 
         Command::Search {
             subject,
@@ -465,13 +568,13 @@ async fn main() -> Result<()> {
                 .timeout(Duration::from_secs(30))
                 .build()?;
 
-            if let Some(cookies) = load_session()? {
+            if let Some(cookies) = session::load_session()? {
                 client.restore_cookies(&cookies);
             }
 
             if let (Some(login), Some(password)) = (login, password) {
                 client.login(&login, &password, true).await?;
-                save_session(&client)?;
+                session::save_session(&client)?;
             }
 
             let mut threads = client.search_subject(&subject).await?;
@@ -489,15 +592,7 @@ async fn main() -> Result<()> {
             print_threads(&threads);
         }
 
-        Command::Logout => {
-            let path = session_path()?;
-            if path.exists() {
-                std::fs::remove_file(&path)?;
-                println!("Logged out.");
-            } else {
-                println!("No saved session.");
-            }
-        }
+        Command::Logout => session::logout()?,
 
         Command::Install {
             target,
@@ -510,7 +605,7 @@ async fn main() -> Result<()> {
                 .timeout(Duration::from_secs(60))
                 .delay(Duration::from_millis(delay_ms))
                 .build()?;
-            if let Some(cookies) = load_session()? {
+            if let Some(cookies) = session::load_session()? {
                 client.restore_cookies(&cookies);
             }
             if !client.is_logged_in() {
@@ -612,7 +707,7 @@ async fn main() -> Result<()> {
                 .timeout(Duration::from_secs(60))
                 .delay(Duration::from_millis(delay_ms))
                 .build()?;
-            if let Some(cookies) = load_session()? {
+            if let Some(cookies) = session::load_session()? {
                 client.restore_cookies(&cookies);
             }
 
@@ -649,10 +744,18 @@ async fn main() -> Result<()> {
 
             if download {
                 std::fs::create_dir_all(&dir)?;
+                let mut used = HashSet::new();
                 for attachment in &page.attachments {
-                    let path = dir.join(&attachment.name);
-                    match client.download_attachment_to(attachment, &path).await {
-                        Ok(bytes) => println!("saved {} ({bytes} bytes)", path.display()),
+                    let dest = unique_dest(&dir, &attachment.name, &mut used);
+                    if dest.file_name().and_then(|f| f.to_str()) != Some(attachment.name.as_str()) {
+                        println!(
+                            "  duplicate name \"{}\" -> {}",
+                            attachment.name,
+                            dest.file_name().unwrap().to_string_lossy()
+                        );
+                    }
+                    match client.download_attachment_to(attachment, &dest).await {
+                        Ok(bytes) => println!("saved {} ({bytes} bytes)", dest.display()),
                         Err(err) => {
                             println!("skipped {} ({err})", attachment.name);
                         }

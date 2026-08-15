@@ -1,10 +1,10 @@
-# Smoke test: builds OpenFpt, logs in with the FPT_LOGIN / FPT_PASSWORD
+# Smoke test: builds OpenFpt, logs in with the FUO_LOGIN / FUO_PASSWORD
 # secrets, then runs random `search` queries against random subjects.
 #
 # First-time setup: add two repository secrets
 #   Settings -> Secrets and variables -> Actions -> New repository secret
-#     FPT_LOGIN   = your fuoverflow.com username
-#     FPT_PASSWORD = your fuoverflow.com password
+#     FUO_LOGIN   = your fuoverflow.com username
+#     FUO_PASSWORD = your fuoverflow.com password
 # then run this workflow manually via the "Run workflow" button.
 
 name: Smoke test (random subjects)
@@ -43,23 +43,23 @@ jobs:
           FUO_LOGIN: ${{ secrets.FUO_LOGIN }}
           FUO_PASSWORD: ${{ secrets.FUO_PASSWORD }}
         run: |
-          if ([string]::IsNullOrEmpty($env:FPT_LOGIN) -or [string]::IsNullOrEmpty($env:FPT_PASSWORD)) {
-            Write-Error "FPT_LOGIN / FPT_PASSWORD secrets are not set.`nAdd them under Settings -> Secrets and variables -> Actions, then re-run."
+          if ([string]::IsNullOrEmpty($env:FUO_LOGIN) -or [string]::IsNullOrEmpty($env:FUO_PASSWORD)) {
+            Write-Error "FUO_LOGIN / FUO_PASSWORD secrets are not set.`nAdd them under Settings -> Secrets and variables -> Actions, then re-run."
             exit 1
           }
-          $out = & .\target\release\openfpt.exe login "$env:FPT_LOGIN" "$env:FPT_PASSWORD" 2>&1 | Out-String
+          $out = & .\target\release\openfpt.exe login "$env:FUO_LOGIN" "$env:FUO_PASSWORD" 2>&1 | Out-String
           $out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($out -notmatch 'Authenticated: true') {
-            Write-Error "Login did not report success - check the FPT_LOGIN / FPT_PASSWORD secrets."
+            Write-Error "Login did not report success - check the FUO_LOGIN / FUO_PASSWORD secrets."
             exit 1
           }
 
       - name: Random search test
         shell: pwsh
         env:
-          FPT_LOGIN: ${{ secrets.FPT_LOGIN }}
-          FPT_PASSWORD: ${{ secrets.FPT_PASSWORD }}
+          FUO_LOGIN: ${{ secrets.FUO_LOGIN }}
+          FUO_PASSWORD: ${{ secrets.FUO_PASSWORD }}
         run: |
           $all = @'
           # Kỳ 0 (semester 0)

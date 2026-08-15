@@ -9,6 +9,9 @@ A Rust CLI scraper for the FuOverflow community forum.
 - Inspect a thread's attachment list
 - Install a thread or an entire subject: download full-resolution attachments and
   write a `manifest.toml` + `comments.toml` per thread
+- Duplicate attachment names are kept apart: the first `thisimage.png` stays
+  `thisimage.png`, the next becomes `thisimage (1).png`, and so on
+  (the manifest records the on-disk name via its `file` field)
 - Detects the site's automatic ban page and reports it instead of failing silently
 
 ## Build
