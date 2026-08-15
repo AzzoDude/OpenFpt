@@ -47,7 +47,7 @@ jobs:
             Write-Error "FPT_LOGIN / FPT_PASSWORD secrets are not set.`nAdd them under Settings -> Secrets and variables -> Actions, then re-run."
             exit 1
           }
-          $out = & .\target\release\OpenFpt.exe login "$env:FPT_LOGIN" "$env:FPT_PASSWORD" 2>&1 | Out-String
+          $out = & .\target\release\openfpt.exe login "$env:FPT_LOGIN" "$env:FPT_PASSWORD" 2>&1 | Out-String
           $out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($out -notmatch 'Authenticated: true') {
@@ -93,13 +93,13 @@ jobs:
           Write-Host "Picked 3 random subjects out of $($all.Count): $($picks -join ', ')" -ForegroundColor Cyan
           foreach ($subject in $picks) {
             Write-Host "`n=== search $subject ===" -ForegroundColor Cyan
-            & .\target\release\OpenFpt.exe search $subject
+            & .\target\release\openfpt.exe search $subject
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: OpenFpt-windows
-          path: target/release/OpenFpt.exe
+          name: openfpt-windows
+          path: target/release/openfpt.exe
           if-no-files-found: error

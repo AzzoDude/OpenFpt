@@ -1,0 +1,50 @@
+# Release workflow: push a tag (v*) to build openfpt.exe, attach it to a
+# GitHub Release, and open a winget PR for AzzoDude.OpenFpt.
+#
+# One-time setup: add a WINGET_TOKEN secret (a GitHub PAT with the public_repo
+# scope, owned by AzzoDude) under Settings -> Secrets and variables -> Actions.
+# Without it, the release is still created; only the winget step is skipped.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (release)
+        run: cargo build --release --workspace
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/openfpt.exe
+          generate_release_notes: true
+
+      - name: Publish to winget (AzzoDude.OpenFpt)
+        if: ${{ secrets.WINGET_TOKEN != '' }}
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: AzzoDude.OpenFpt
+          installers-regex: '\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}
+          fork-user: AzzoDude

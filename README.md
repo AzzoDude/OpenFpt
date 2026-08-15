@@ -17,22 +17,25 @@ A Rust CLI scraper for the FuOverflow community forum.
 cargo build --release --workspace
 ```
 
-The binary is `target/release/OpenFpt.exe`.
+The binary is `target/release/openfpt.exe` (`openfpt` on Unix).
 
 ## Usage
 
 ```sh
-OpenFpt.exe login                          # prompts for login + password
-OpenFpt.exe login <user> <pass>            # non-interactive
-OpenFpt.exe search PRF192                  # all threads of a subject
-OpenFpt.exe search PRF192 FE               # only "Đề Thi FE" threads
-OpenFpt.exe thread 7218                    # attachment table of one thread
-OpenFpt.exe thread 7218 --comments         # + comments
-OpenFpt.exe install 7218                   # download one thread
-OpenFpt.exe install PRF192                 # download every thread of a subject
-OpenFpt.exe install PRF192 --no-comments   # attachments only (much faster)
-OpenFpt.exe logout                         # delete the saved session
+openfpt login                          # prompts for login + password
+openfpt login <user> <pass>            # non-interactive
+openfpt search PRF192                  # all threads of a subject
+openfpt search PRF192 FE               # only "Đề Thi FE" threads
+openfpt thread 7218                    # attachment table of one thread
+openfpt thread 7218 --comments         # + comments
+openfpt install 7218                   # download one thread
+openfpt install PRF192                 # download every thread of a subject
+openfpt install PRF192 --no-comments   # attachments only (much faster)
+openfpt logout                         # delete the saved session
 ```
+
+> On Windows, `openfpt` resolves only when the folder containing `openfpt.exe`
+> is on your `PATH` (winget installs it this way). Otherwise type `openfpt.exe`.
 
 ### Options
 
@@ -46,6 +49,39 @@ OpenFpt.exe logout                         # delete the saved session
 - Keep `--delay-ms` high and prefer single-thread installs; the site bans
   accounts that make too many requests in a row.
 - `session.txt` contains your session cookies — don't commit it (already in `.gitignore`).
+  It is saved next to the executable, so with a winget install you'll find it
+  under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\`.
+
+## Install via winget
+
+The package is published to the Windows Package Manager community repository
+as `AzzoDude.OpenFpt`:
+
+```sh
+winget install AzzoDude.OpenFpt
+```
+
+After install, `openfpt` is on your `PATH`, so `openfpt install PRF192` just works.
+
+Publishing is automated by the `Release` workflow:
+
+1. Tag a version: `git tag v0.1.0 && git push origin v0.1.0`
+2. The workflow builds `openfpt.exe`, creates a GitHub Release with it, then
+   runs `winget-releaser` to open a PR against `microsoft/winget-pkgs`.
+3. Once the PR is merged (usually within a day), run `winget install AzzoDude.OpenFpt`.
+
+### Prerequisites (one-time)
+
+- A [GitHub PAT](https://github.com/settings/tokens) with the `public_repo`
+  scope, stored as the `WINGET_TOKEN` secret
+  (Settings → Secrets and variables → Actions).
+- The `Release` workflow runs on tags; if the winget publish step fails or the
+  PR needs manual help, create the manifest yourself with
+  [`wingetcreate`](https://github.com/microsoft/winget-create):
+
+  ```sh
+  wingetcreate update AzzoDude.OpenFpt --urls https://github.com/AzzoDude/openfpt/releases/download/v0.1.0/openfpt.exe --version 0.1.0
+  ```
 
 ## License
 
