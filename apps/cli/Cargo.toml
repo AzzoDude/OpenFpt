@@ -1,0 +1,27 @@
+[package]
+name = "cli"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+
+[[bin]]
+name = "OpenFpt"
+path = "src/main.rs"
+
+[dependencies]
+fuo.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+rpassword = "7.5.4"
+
+[lints]
+workspace = true

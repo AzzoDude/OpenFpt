@@ -1,0 +1,20 @@
+[package]
+name = "fuo"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+reqwest.workspace = true
+scraper = "0.27.0"
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time", "fs", "io-util"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+default-members = ["apps/cli"]
+members = ["apps/cli", "crates/fuo"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "GPL3-only"
+rust-version = "1.97.1"
+description = "FuOverflow community scraper"
+keywords = ["scraper", "xenforo", "forum", "cli"]
+categories = ["command-line-utilities"]
+repository = "https://github.com/AzzoDude/openfpt"
+
+[workspace.dependencies]
+fuo = { path = "crates/fuo" }
+
+anyhow = "1.0.104"
+thiserror = "2.0.20"
+reqwest = { version = "0.13.4", features = ["cookies", "form"] }
+tokio = { version = "1.53.1", features = ["full"] }
+clap = { version = "4.6.6", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+too_many_lines = "allow"
+duration_suboptimal_units = "allow"
+multiple_crate_versions = "allow"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
