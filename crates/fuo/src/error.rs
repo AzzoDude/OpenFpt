@@ -11,6 +11,16 @@ pub enum Error {
     #[error("could not extract the CSRF token from the login page")]
     CsrfTokenNotFound,
 
+    #[error(
+        "the login page did not contain a CSRF token — the site may be blocking this IP or the page layout changed. Page preview: {preview}"
+    )]
+    UnexpectedLoginPage { preview: String },
+
+    #[error(
+        "the site served a bot-check page instead of the login form — GitHub Actions runners (datacenter IPs) may be blocked. Run `openfpt login` from your own machine, or use a self-hosted runner."
+    )]
+    BotChallenge,
+
     #[error("login failed: the server did not set an authenticated session cookie")]
     InvalidCredentials,
 

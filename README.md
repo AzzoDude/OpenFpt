@@ -1,6 +1,7 @@
 # OpenFpt
 
-A Rust CLI scraper for the FuOverflow community forum.
+A Rust CLI for the FuOverflow community forum — with FPT syllabus and myFAP
+support in development.
 
 ## Features
 
@@ -13,6 +14,14 @@ A Rust CLI scraper for the FuOverflow community forum.
   `thisimage.png`, the next becomes `thisimage (1).png`, and so on
   (the manifest records the on-disk name via its `file` field)
 - Detects the site's automatic ban page and reports it instead of failing silently
+
+## Roadmap
+
+These FPT University integrations are in active development and are not usable
+yet — the commands in this README are FuOverflow-only for now:
+
+- **Syllabus** — browse and search the official course-syllabus system
+- **myFAP** — the student portal: grades, class schedules, attendance
 
 ## Build
 

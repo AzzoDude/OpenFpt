@@ -216,8 +216,23 @@ impl FuoClient {
     }
 
     async fn fetch_csrf_token(&self) -> Result<String> {
-        let html = self.client.get(LOGIN_URL).send().await?.text().await?;
-        extract_csrf_token(&html)
+        let html = self
+            .client
+            .get(LOGIN_URL)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        if is_banned(&html) {
+            return Err(Error::AccountBanned);
+        }
+        if is_bot_check(&html) {
+            return Err(Error::BotChallenge);
+        }
+        extract_csrf_token(&html).map_err(|_| Error::UnexpectedLoginPage {
+            preview: page_preview(&html),
+        })
     }
 
     fn cookies(&self, url: &str) -> String {
@@ -298,13 +313,97 @@ impl FuoClientBuilder {
 }
 
 fn extract_csrf_token(html: &str) -> Result<String> {
+    // XenForo 2.2+ puts the token on the root <html> element.
     const MARKER: &str = r#"data-csrf=""#;
-    let start = html
-        .find(MARKER)
-        .map(|index| index + MARKER.len())
-        .ok_or(Error::CsrfTokenNotFound)?;
-    let end = html[start..].find('"').ok_or(Error::CsrfTokenNotFound)?;
-    Ok(html[start..start + end].to_owned())
+    if let Some(start) = html.find(MARKER).map(|index| index + MARKER.len()) {
+        if let Some(end) = html[start..].find('"') {
+            return Ok(html[start..start + end].to_owned());
+        }
+    }
+    // Older templates only expose it as a hidden `_xfToken` input in forms.
+    const INPUT: &str = r#"name="_xfToken" value=""#;
+    if let Some(start) = html.find(INPUT).map(|index| index + INPUT.len()) {
+        if let Some(end) = html[start..].find('"') {
+            return Ok(html[start..start + end].to_owned());
+        }
+    }
+    Err(Error::CsrfTokenNotFound)
+}
+
+fn is_bot_check(html: &str) -> bool {
+    let lower = html.to_ascii_lowercase();
+    // NB: `challenge-platform` is NOT a reliable marker — the real login page
+    // embeds Cloudflare Turnstile from that domain. Only match the
+    // interstitial challenge page itself.
+    [
+        "just a moment",
+        "cf-chl-",
+        "cf-browser-verification",
+        "captcha",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+}
+
+fn page_preview(html: &str) -> String {
+    let title = html
+        .find("<title>")
+        .and_then(|start| {
+            let after = html.get(start + 7..)?;
+            let end = after.find("</title>")?;
+            Some(&after[..end])
+        })
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| html.chars().take(160).collect());
+    title
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(200)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_token_from_data_csrf_attribute() {
+        let html =
+            r#"<html data-csrf="1786850610,962bc08506b151da26694d33fa4b86ef"><body></body></html>"#;
+        assert_eq!(
+            extract_csrf_token(html).unwrap(),
+            "1786850610,962bc08506b151da26694d33fa4b86ef"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_xf_token_input() {
+        let html = r#"<form action="/login/login" method="post"><input type="hidden" name="_xfToken" value="tok1,tok2" /></form>"#;
+        assert_eq!(extract_csrf_token(html).unwrap(), "tok1,tok2");
+    }
+
+    #[test]
+    fn missing_token_is_an_error() {
+        assert!(extract_csrf_token("<html><body>no token</body></html>").is_err());
+    }
+
+    #[test]
+    fn detects_bot_check_markers() {
+        assert!(is_bot_check("<html><title>Just a moment...</title></html>"));
+        assert!(is_bot_check("<div class=\"cf-chl-container\"></div>"));
+        assert!(!is_bot_check("<html data-csrf=\"x\"></html>"));
+    }
+
+    #[test]
+    fn turnstile_script_is_not_a_bot_check() {
+        let html =
+            "<html data-csrf=\"x\"><script>challenge-platform/scripts/jsd/main.js</script></html>";
+        assert!(!is_bot_check(html));
+    }
 }
 
 pub fn is_banned(html: &str) -> bool {

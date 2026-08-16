@@ -1,15 +1,15 @@
 [workspace]
 resolver = "3"
 default-members = ["apps/cli"]
-members = ["apps/cli", "crates/fuo"]
+members = ["apps/cli", "crates/*"]
 
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
 license = "GPL3-only"
 rust-version = "1.97.1"
-description = "FuOverflow community scraper"
-keywords = ["scraper", "xenforo", "forum", "cli"]
+description = "FuOverflow community scraper (FPT syllabus & myFAP support in development)"
+keywords = ["scraper", "xenforo", "forum", "cli", "fpt", "syllabus", "myfap"]
 categories = ["command-line-utilities"]
 repository = "https://github.com/AzzoDude/openfpt"
 
@@ -19,8 +19,9 @@ fuo = { path = "crates/fuo" }
 anyhow = "1.0.104"
 thiserror = "2.0.20"
 reqwest = { version = "0.13.4", features = ["cookies", "form"] }
-tokio = { version = "1.53.1", features = ["full"] }
+tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "rt-multi-thread", "time"] }
 clap = { version = "4.6.6", features = ["derive"] }
+scraper = "0.27.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
