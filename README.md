@@ -5,7 +5,8 @@ support in development.
 
 ## Features
 
-- Log in and persist the session (`session.txt` next to the executable)
+- Log in and persist the session in your OS credential manager
+  (Windows Credential Manager / macOS Keychain / Linux Secret Service)
 - Search every thread of a subject, with prefix filtering (`FE`, `PE`)
 - Inspect a thread's attachment list
 - Install a thread or an entire subject: download full-resolution attachments and
@@ -60,9 +61,10 @@ openfpt logout                         # delete the saved session
 - Comments and full-resolution files require a premium account.
 - Keep `--delay-ms` high and prefer single-thread installs; the site bans
   accounts that make too many requests in a row.
-- `session.txt` contains your session cookies — don't commit it (already in `.gitignore`).
-  It is saved next to the executable, so with a winget install you'll find it
-  under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\`.
+- The session cookies live only in your OS credential manager — Windows
+  Credential Manager, macOS Keychain, or Linux Secret Service — so nothing is
+  left on disk. If no credential store is available (e.g. headless Linux),
+  `login` will fail rather than fall back to a plaintext file.
 
 ## Install via winget
 

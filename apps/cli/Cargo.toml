@@ -21,6 +21,7 @@ anyhow.workspace = true
 clap.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+keyring = "3"
 rpassword = "7.5.4"
 
 [lints]

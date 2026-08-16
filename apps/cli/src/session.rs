@@ -1,33 +1,48 @@
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use fuo::prelude::{Error, FuoClient};
+use keyring::{Entry, Error as KeyringError};
 
-pub fn session_path() -> Result<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
-    Ok(dir.join("session.txt"))
-}
+/// Credential-manager identity under which the session cookies are stored.
+const SERVICE: &str = "openfpt";
+const USERNAME: &str = "session";
 
+/// Persist the session cookies in the OS credential manager (Windows
+/// Credential Manager, macOS Keychain, Linux Secret Service).
 pub fn save_session(client: &FuoClient) -> Result<()> {
-    std::fs::write(session_path()?, client.session_cookies())?;
-    Ok(())
+    secure_entry()?
+        .set_password(&client.session_cookies())
+        .context("could not save the session to the credential manager")
 }
 
 pub fn load_session() -> Result<Option<String>> {
-    let path = session_path()?;
-    if path.exists() {
-        Ok(Some(std::fs::read_to_string(path)?))
-    } else {
-        Ok(None)
+    match secure_entry().and_then(|entry| entry.get_password()) {
+        Ok(cookies) => Ok(Some(cookies)),
+        Err(KeyringError::NoEntry) => Ok(None),
+        Err(err) => Err(err).context("could not read the session from the credential manager"),
     }
 }
 
+pub fn logout() -> Result<()> {
+    match secure_entry().and_then(|entry| entry.delete_credential()) {
+        Ok(()) => println!("Logged out."),
+        Err(KeyringError::NoEntry) => println!("No saved session."),
+        Err(err) => {
+            return Err(err).context("could not remove the credential-manager entry");
+        }
+    }
+    Ok(())
+}
+
+fn secure_entry() -> Result<Entry, KeyringError> {
+    Entry::new(SERVICE, USERNAME)
+}
+
 /// Authenticate (interactively or with provided credentials), persist the
-/// session next to the executable, and report the outcome. A banned account
-/// prints a friendly notice instead of failing.
+/// session, and report the outcome. A banned account prints a friendly notice
+/// instead of failing.
 pub async fn login(login: Option<String>, password: Option<String>) -> Result<()> {
     let login = match login {
         Some(login) => login,
@@ -55,17 +70,6 @@ pub async fn login(login: Option<String>, password: Option<String>) -> Result<()
             );
         }
         Err(err) => return Err(err.into()),
-    }
-    Ok(())
-}
-
-pub fn logout() -> Result<()> {
-    let path = session_path()?;
-    if path.exists() {
-        std::fs::remove_file(&path)?;
-        println!("Logged out.");
-    } else {
-        println!("No saved session.");
     }
     Ok(())
 }

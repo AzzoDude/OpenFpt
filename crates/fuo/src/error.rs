@@ -17,6 +17,11 @@ pub enum Error {
     UnexpectedLoginPage { preview: String },
 
     #[error(
+        "the login page was rejected with HTTP 403 — the site is likely blocking this IP (datacenter/VPN). Run `openfpt login` from your own network, or use a self-hosted GitHub runner."
+    )]
+    ForbiddenLoginPage,
+
+    #[error(
         "the site served a bot-check page instead of the login form — GitHub Actions runners (datacenter IPs) may be blocked. Run `openfpt login` from your own machine, or use a self-hosted runner."
     )]
     BotChallenge,

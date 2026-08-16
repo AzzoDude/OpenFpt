@@ -216,14 +216,11 @@ impl FuoClient {
     }
 
     async fn fetch_csrf_token(&self) -> Result<String> {
-        let html = self
-            .client
-            .get(LOGIN_URL)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
+        let res = self.client.get(LOGIN_URL).send().await?;
+        if res.status() == reqwest::StatusCode::FORBIDDEN {
+            return Err(Error::ForbiddenLoginPage);
+        }
+        let html = res.error_for_status()?.text().await?;
         if is_banned(&html) {
             return Err(Error::AccountBanned);
         }

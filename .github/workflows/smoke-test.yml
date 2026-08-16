@@ -1,16 +1,32 @@
 # Smoke test: builds OpenFpt, logs in with the FUO_LOGIN / FUO_PASSWORD
 # secrets, then runs random `search` queries against random subjects.
 #
+# IMPORTANT: fuoverflow.com blocks GitHub-hosted runner IPs (HTTP 403 on the
+# login page), so the login step only works on a SELF-HOSTED runner. To use it:
+#
+# 1. Register your machine as a self-hosted runner:
+#    Settings -> Actions -> Runners -> New self-hosted runner (Windows x64),
+#    then run the provided config script on your machine.
+# 2. When running this workflow, set the "Runner" input to `self-hosted`.
+#
 # First-time setup: add two repository secrets
 #   Settings -> Secrets and variables -> Actions -> New repository secret
 #     FUO_LOGIN   = your fuoverflow.com username
 #     FUO_PASSWORD = your fuoverflow.com password
-# then run this workflow manually via the "Run workflow" button.
 
 name: Smoke test (random subjects)
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner to execute the smoke test on'
+        required: false
+        default: 'windows-latest'
+        type: choice
+        options:
+          - windows-latest
+          - self-hosted
 
 permissions:
   contents: read
@@ -21,7 +37,7 @@ env:
 jobs:
   smoke-test:
     name: Build, login, random search
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
 
     steps:
