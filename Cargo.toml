@@ -46,3 +46,11 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Fast profile for CI smoke tests — much quicker to compile than `release`
+# while still being representative of the shipped binary.
+[profile.ci]
+inherits = "release"
+opt-level = 2
+lto = "thin"
+codegen-units = 16

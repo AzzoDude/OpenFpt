@@ -34,8 +34,13 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build (release)
-        run: cargo build --release --workspace
+      - name: Sccache
+        uses: mozilla/sccache-action@v0.0.9
+        with:
+          sccache-cache: sccache
+
+      - name: Build (ci profile)
+        run: cargo build --profile ci --workspace
 
       - name: Login with secrets
         shell: pwsh
@@ -47,7 +52,7 @@ jobs:
             Write-Error "FUO_LOGIN / FUO_PASSWORD secrets are not set.`nAdd them under Settings -> Secrets and variables -> Actions, then re-run."
             exit 1
           }
-          $out = & .\target\release\openfpt.exe login "$env:FUO_LOGIN" "$env:FUO_PASSWORD" 2>&1 | Out-String
+          $out = & .\target\ci\openfpt.exe login "$env:FUO_LOGIN" "$env:FUO_PASSWORD" 2>&1 | Out-String
           $out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($out -notmatch 'Authenticated: true') {
@@ -93,7 +98,7 @@ jobs:
           Write-Host "Picked 3 random subjects out of $($all.Count): $($picks -join ', ')" -ForegroundColor Cyan
           foreach ($subject in $picks) {
             Write-Host "`n=== search $subject ===" -ForegroundColor Cyan
-            & .\target\release\openfpt.exe search $subject
+            & .\target\ci\openfpt.exe search $subject
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
@@ -101,5 +106,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openfpt-windows
-          path: target/release/openfpt.exe
+          path: target/ci/openfpt.exe
           if-no-files-found: error
